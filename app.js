@@ -1,48 +1,150 @@
 //jshint esversion:6
 
-const express = require("express");
-const bodyParser = require("body-parser");
-const date = require(__dirname + "/date.js");
+const express = require('express');
+const bodyParser = require('body-parser');
+const date = require(__dirname + '/date.js');
+const mongoose = require('mongoose');
+const _ = require('lodash');
 
 const app = express();
 
 app.set('view engine', 'ejs');
 
 app.use(bodyParser.urlencoded({extended: true}));
-app.use(express.static("public"));
+app.use(express.static('public'));
 
-const items = ["Buy Food", "Cook Food", "Eat Food"];
-const workItems = [];
+mongoose.connect('mongodb://localhost:27017/todolistDB');
 
-app.get("/", function(req, res) {
+const dateNow = date.getDate();
 
-const day = date.getDate();
+const itemSchema = new mongoose.Schema ({
+  itemBody: String,
+  dateAdded: Date
+});
+const Item = new mongoose.model('Item', itemSchema);
 
-  res.render("list", {listTitle: day, newListItems: items});
+const listSchema = new mongoose.Schema({
+  name: String,
+  items: [itemSchema]
+});
+const List = new mongoose.model('List', listSchema);
+
+const userSchema = new mongoose.Schema({
+  name: String,
+  lists: [listSchema]
+});
+const User = new mongoose.model('User', userSchema);
+
+const item1 = new Item ({
+  itemBody: 'Welcome to your todolist!',
+  dateAdded: dateNow
+});
+
+const item2 = new Item ({
+  itemBody: 'Hit the + button to add new item.',
+  dateAdded: dateNow
+});
+
+const item3 = new Item ({
+  itemBody: '<-- Hit this to delete an item.',
+  dateAdded: dateNow
+});
+
+const defaultsItems = [item1, item2, item3];
+
+app.get('/', function(req, res) {
+  Item.find({name: 'inbox'}, function (err, foundItems){
+    if (err) {
+      console.log(err);
+    } else {
+      if (foundItems.length === 0) {
+        Item.insertMany(defaultsItems, function(err){
+          if (err) {
+              console.log(err);
+          }
+        });
+        res.redirect('/');
+      } else {
+        res.render('list', {listTitle: dateNow, newListItems: foundItems});
+      }
+  }});
+});
+
+app.get('/:listName', function (req, res) {
+  
+  let listName = _.capitalize(req.params.listName);
+  const listRoute = '/' + listName;
+  
+  const list = new List ({
+    name: listName,
+    items: defaultsItems
+  });
+  
+  List.findOne({name: listName}, function (err, foundList){
+    if (err) {
+      console.log(err);
+    } else {
+      if (!foundList) {
+        list.save();
+        res.redirect(listRoute);
+      } else {
+        res.render('list', {listTitle: listName, newListItems: foundList.items});
+      }
+    }
+  });
 
 });
 
-app.post("/", function(req, res){
+app.post('/add', function(req, res){
+  let listName = req.body.list;
+  const listRoute = '/' + listName;
 
-  const item = req.body.newItem;
+  const item = new Item ({
+    itemBody: req.body.newItem,
+    dateAdded: dateNow
+  });
 
-  if (req.body.list === "Work") {
-    workItems.push(item);
-    res.redirect("/work");
+  if (listName === dateNow) {
+    listName = 'inbox';
+    item.save();
+    res.redirect('/');
   } else {
-    items.push(item);
-    res.redirect("/");
+    List.findOne({name: listName}, function (err, foundList) {
+      foundList.items.push(item);
+      foundList.save();
+      res.redirect(listRoute);
+    });
   }
 });
 
-app.get("/work", function(req,res){
-  res.render("list", {listTitle: "Work List", newListItems: workItems});
-});
+app.post('/delete', function(req,res){
+  let listName = req.body.list;
+  const listRoute = '/' + listName;
+  const itemID = req.body.checkbox;
+  
+  if (listName === dateNow) {
+    Item.findByIdAndRemove(itemID, function (err){
+      if (err) {
+        console.log(err);
+      } else {
+        res.redirect('/');
+      }});
+  } else {
+    List.findOneAndUpdate(
+      {name: listName},
+      {$pull: {items: {_id: itemID}}},
+      function (err) {
+        if (err) {
+          console.log(err);
+        } else {
+          res.redirect(listRoute);
+        }});
+}});
 
-app.get("/about", function(req, res){
-  res.render("about");
+app.get('/about', function(req, res){
+  res.render('about');
 });
 
 app.listen(3000, function() {
-  console.log("Server started on port 3000");
+  console.log('Server started on port 3000');
 });
