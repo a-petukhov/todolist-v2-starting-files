@@ -149,6 +149,7 @@ let port = process.env.PORT;
 if (port == null || port == "") {
   port = 3000;
 }
-app.listen(port, function() {
-  console.log('Server started on port ' + port);
+
+app.listen(port, function (req, res) {
+  console.log('The server is runing now.');
 });
